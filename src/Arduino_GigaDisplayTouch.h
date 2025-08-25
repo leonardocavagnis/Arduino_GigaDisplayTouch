@@ -30,9 +30,11 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "Wire.h"
+#include <Arduino.h>
+#ifdef __MBED__
 #include "mbed.h"
 #include "pinDefinitions.h"
-#include <Arduino.h>
+#endif
 
 /* Exported defines ----------------------------------------------------------*/
 #define GT911_I2C_ADDR_BA_BB (0x5D | 0x80) // 0xBA/0xBB - 0x5D (7bit address)
@@ -69,16 +71,18 @@ struct GDTpoint_s {
  */
 class Arduino_GigaDisplayTouch {
 public:
-/**
- * @brief Construct a new touch controller for Giga Display Shield.
- *
- * @param wire A reference to the Wire interface to be used for communication
- * with the touch controller.
- * @param intPin The interrupt pin number for the touch controller.
- * @param rstPin The reset pin number for the touch controller.
- * @param addr The device address for the touch controller.
- */
-#if defined(ARDUINO_GIGA)
+  /**
+   * @brief Construct a new touch controller for Giga Display Shield.
+   *
+   * @param wire A reference to the Wire interface to be used for communication
+   * with the touch controller.
+   * @param intPin The interrupt pin number for the touch controller.
+   * @param rstPin The reset pin number for the touch controller.
+   * @param addr The device address for the touch controller.
+   */
+#if defined(__ZEPHYR__)
+  Arduino_GigaDisplayTouch();
+#elif defined(ARDUINO_GIGA)
   Arduino_GigaDisplayTouch(TwoWire &wire = Wire1,
                            uint8_t intPin = PinNameToIndex(PI_1),
                            uint8_t rstPin = PinNameToIndex(PI_2),
@@ -92,6 +96,7 @@ public:
   Arduino_GigaDisplayTouch(TwoWire &wire, uint8_t intPin, uint8_t rstPin,
                            uint8_t addr);
 #endif
+
   ~Arduino_GigaDisplayTouch();
 
   /**
@@ -121,11 +126,12 @@ public:
   void onDetect(void (*handler)(uint8_t, GDTpoint_t *));
 
 private:
+#if defined(__MBED__)
   TwoWire &_wire;
   uint8_t _intPin;
-  mbed::InterruptIn _irqInt;
   uint8_t _rstPin;
   uint8_t _addr;
+  mbed::InterruptIn _irqInt;
   GDTpoint_t _points[GT911_MAX_CONTACTS];
   void (*_gt911TouchHandler)(uint8_t, GDTpoint_t *);
 
@@ -134,6 +140,8 @@ private:
   uint8_t _gt911ReadOp(uint16_t reg, uint8_t *data, uint8_t len);
   void _gt911onIrq();
   uint8_t _gt911ReadInputCoord(uint8_t *pointsbuf, uint8_t &contacts);
+
+#endif
 };
 
 #endif /* __ARDUINO_GIGADISPLAYTOUCH_H */

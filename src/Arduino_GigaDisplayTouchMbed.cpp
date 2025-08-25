@@ -23,6 +23,7 @@
  */
 
 /* Includes -----------------------------------------------------------------*/
+#ifdef __MBED__
 #include "Arduino_GigaDisplayTouch.h"
 
 #if __has_include("lvgl.h")
@@ -281,4 +282,5 @@ uint8_t Arduino_GigaDisplayTouch::_gt911ReadInputCoord(uint8_t *pointsbuf,
   return 0;
 }
 
-/**** END OF FILE ****/
+#endif /* __MBED__ */
+       /**** END OF FILE ****/
