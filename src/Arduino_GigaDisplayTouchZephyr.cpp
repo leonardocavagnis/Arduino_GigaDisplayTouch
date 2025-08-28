@@ -24,80 +24,116 @@
 #include <zephyr/kernel.h>
 #include <zephyr/sys/util.h>
 
-typedef struct {
-  size_t x;
-  size_t y;
-  bool pressed;
-} touch_point_t;
-
-static uint8_t zephyr_touch_cb_slot_num;
-static struct k_sem zephyr_touch_event_sync;
-static touch_point_t zephyr_touch_points[CONFIG_INPUT_GT911_MAX_TOUCH_POINTS];
+static struct k_sem touch_sem;
 
 typedef void (*zephyr_input_callback_t)(struct input_event *evt,
                                         void *user_data);
-extern "C" void zephyr_input_register_callback(zephyr_input_callback_t cb);
-static void touch_event_callback(struct input_event *evt, void *user_data);
+extern "C" void zephyr_input_register_callback(zephyr_input_callback_t cb,
+                                               void *user_data);
+void touch_event_callback(struct input_event *evt, void *user_data);
 
 Arduino_GigaDisplayTouch::Arduino_GigaDisplayTouch() {}
 
 Arduino_GigaDisplayTouch::~Arduino_GigaDisplayTouch() {}
 
 bool Arduino_GigaDisplayTouch::begin() {
-  k_sem_init(&zephyr_touch_event_sync, 0, 1);
-  zephyr_input_register_callback(touch_event_callback);
+  _gt911TouchHandler = nullptr;
+  // Initialize to 1 to prevent deadlock by ensuring that
+  // at least one function can always proceed initially.
+  k_sem_init(&touch_sem, 1, 1);
+  zephyr_input_register_callback(touch_event_callback, this);
   return true;
 }
 
-void Arduino_GigaDisplayTouch::end() {}
+void Arduino_GigaDisplayTouch::end() {
+  _gt911TouchHandler = nullptr;
+  zephyr_input_register_callback(NULL, NULL);
+  memset(_points, 0, sizeof(_points));
+}
 
 uint8_t Arduino_GigaDisplayTouch::getTouchPoints(GDTpoint_t *points) {
   // First wait to see if we get any events.
-  if (k_sem_take(&zephyr_touch_event_sync, K_NO_WAIT) != 0) {
+  if (k_sem_take(&touch_sem, K_NO_WAIT)) {
     return 0;
   }
 
-  uint8_t count_pressed = 0;
-  for (uint8_t i = 0; i <= zephyr_touch_cb_slot_num; i++) {
-    if (zephyr_touch_points[i].pressed) {
-      points[count_pressed].x = zephyr_touch_points[i].x;
-      points[count_pressed].y = zephyr_touch_points[i].y;
+  size_t count_pressed = 0;
+  for (int i = 0; i < GT911_MAX_CONTACTS; i++) {
+    if (_points[i].pressed) {
+      _points[i].pressed = 0;
+      points[count_pressed].trackId = _points[i].trackId;
+      points[count_pressed].x = _points[i].x;
+      points[count_pressed].y = _points[i].y;
       count_pressed++;
     }
   }
+
+  k_sem_give(&touch_sem);
   return count_pressed;
 }
 
-void Arduino_GigaDisplayTouch::onDetect(void (*handler)(uint8_t,
-                                                        GDTpoint_t *)) {
-  UNUSED(handler);
+void Arduino_GigaDisplayTouch::onDetect(GDTTouchHandler_t handler) {
+  _gt911TouchHandler = handler;
 }
 
-static void touch_event_callback(struct input_event *evt, void *user_data) {
-  static const struct device *const touch_dev =
-      DEVICE_DT_GET(DT_CHOSEN(zephyr_touch));
+void touch_event_callback(struct input_event *evt, void *user_data) {
+  static int8_t index = 0;
+  static bool sem_taken = false;
 
-  if (evt->dev != touch_dev) {
+  static const struct device *const dev =
+      DEVICE_DT_GET(DT_CHOSEN(zephyr_touch));
+  Arduino_GigaDisplayTouch *touch = (Arduino_GigaDisplayTouch *)user_data;
+
+  if (!touch || evt->dev != dev) {
+    return;
+  }
+
+  // Take semaphore on first event.
+  if (evt->code == INPUT_ABS_MT_SLOT) {
+    // Check if the semaphore is already taken by this callback.
+    // This could only happen if the event queue dropped BTN_TOUCH.
+    if (!sem_taken && k_sem_take(&touch_sem, K_NO_WAIT) != 0) {
+      return;
+    }
+    sem_taken = true;
+  } else if (!sem_taken) {
+    // On subsequent events, return if we don't have the semaphore.
     return;
   }
 
   switch (evt->code) {
   case INPUT_ABS_MT_SLOT:
-    zephyr_touch_cb_slot_num = evt->value;
+    index = evt->value;
+    touch->_points[index].trackId = evt->value;
     break;
   case INPUT_ABS_X:
-    zephyr_touch_points[zephyr_touch_cb_slot_num].x = evt->value;
+    touch->_points[index].x = evt->value;
     break;
   case INPUT_ABS_Y:
-    zephyr_touch_points[zephyr_touch_cb_slot_num].y = evt->value;
+    touch->_points[index].y = evt->value;
     break;
   case INPUT_BTN_TOUCH:
-    zephyr_touch_points[zephyr_touch_cb_slot_num].pressed = evt->value;
+    touch->_points[index].pressed = evt->value;
     break;
   }
 
-  if (evt->sync) {
-    k_sem_give(&zephyr_touch_event_sync);
+  // Release the semaphore on the last event (BTN_TOUCH pressed).
+  if (evt->code == INPUT_BTN_TOUCH && evt->value) {
+    sem_taken = false;
+    k_sem_give(&touch_sem);
+    if (touch->_gt911TouchHandler) {
+      uint8_t count_pressed = 0;
+      for (int i = 0; i < GT911_MAX_CONTACTS; i++) {
+        if (touch->_points[i].pressed) {
+          touch->_callback_points[count_pressed].trackId =
+              touch->_points[i].trackId;
+          touch->_callback_points[count_pressed].x = touch->_points[i].x;
+          touch->_callback_points[count_pressed].y = touch->_points[i].y;
+          count_pressed++;
+        }
+      }
+      touch->_gt911TouchHandler(count_pressed, touch->_callback_points);
+    }
   }
 }
 #endif
