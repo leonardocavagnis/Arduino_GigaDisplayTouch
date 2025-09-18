@@ -41,10 +41,15 @@
 #define GT911_I2C_ADDR_28_29 (0x14 | 0x80) // 0x28/0x29 - 0x14 (7bit address)
 
 #define GT911_CONTACT_SIZE 8
+#if defined(__MBED__)
 #define GT911_MAX_CONTACTS 5
+#else
+#define GT911_MAX_CONTACTS CONFIG_INPUT_GT911_MAX_TOUCH_POINTS
+#endif
 
 /* Exported types ------------------------------------------------------------*/
 typedef struct GDTpoint_s GDTpoint_t;
+typedef void (*GDTTouchHandler_t)(uint8_t, GDTpoint_t *);
 
 /* Exported enumeration ------------------------------------------------------*/
 
@@ -59,7 +64,7 @@ struct GDTpoint_s {
   uint16_t x;
   uint16_t y;
   uint16_t area;
-  uint8_t reserved;
+  uint8_t pressed;
 };
 
 /* Class
@@ -123,24 +128,26 @@ public:
    * @brief Attach an interrupt handler function for touch detection callbacks.
    * @param handler The pointer to the user-defined handler function.
    */
-  void onDetect(void (*handler)(uint8_t, GDTpoint_t *));
+  void onDetect(GDTTouchHandler_t handler);
 
 private:
+  GDTTouchHandler_t _gt911TouchHandler;
+  GDTpoint_t _points[GT911_MAX_CONTACTS];
 #if defined(__MBED__)
   TwoWire &_wire;
   uint8_t _intPin;
   uint8_t _rstPin;
   uint8_t _addr;
   mbed::InterruptIn _irqInt;
-  GDTpoint_t _points[GT911_MAX_CONTACTS];
-  void (*_gt911TouchHandler)(uint8_t, GDTpoint_t *);
 
   uint8_t _gt911WriteOp(uint16_t reg, uint8_t data);
   uint8_t _gt911WriteBytesOp(uint16_t reg, uint8_t *data, uint8_t len);
   uint8_t _gt911ReadOp(uint16_t reg, uint8_t *data, uint8_t len);
   void _gt911onIrq();
   uint8_t _gt911ReadInputCoord(uint8_t *pointsbuf, uint8_t &contacts);
-
+#elif defined(__ZEPHYR__)
+  GDTpoint_t _callback_points[GT911_MAX_CONTACTS];
+  friend void touch_event_callback(struct input_event *evt, void *user_data);
 #endif
 };
 
