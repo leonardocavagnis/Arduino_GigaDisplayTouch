@@ -32,23 +32,39 @@ extern "C" void zephyr_input_register_callback(zephyr_input_callback_t cb,
                                                void *user_data);
 void touch_event_callback(struct input_event *evt, void *user_data);
 
-Arduino_GigaDisplayTouch::Arduino_GigaDisplayTouch() {}
+Arduino_GigaDisplayTouch::Arduino_GigaDisplayTouch()
+    : Arduino_GigaDisplayTouch(Wire1) {}
+
+Arduino_GigaDisplayTouch::Arduino_GigaDisplayTouch(TwoWire &wire)
+    : _wire{wire} {}
 
 Arduino_GigaDisplayTouch::~Arduino_GigaDisplayTouch() {}
 
 bool Arduino_GigaDisplayTouch::begin() {
-  static const struct device *const dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_touch));
+  static const struct device *const dev =
+      DEVICE_DT_GET(DT_CHOSEN(zephyr_touch));
   if (!dev) {
     printk("<ERR> touch DEV null\n");
     return false;
   }
-  (void)zephyr::arduino::init_dev_apply_pinctrl(dev);
+
+  _wire.begin();
+
+  if (!device_is_ready(dev)) {
+    // init device for first usage, if not ready
+    int err = device_init(dev);
+    if (err < 0) {
+      return false;
+    }
+  }
 
   _gt911TouchHandler = nullptr;
+
   // Initialize to 1 to prevent deadlock by ensuring that
   // at least one function can always proceed initially.
   k_sem_init(&touch_sem, 1, 1);
   zephyr_input_register_callback(touch_event_callback, this);
+
   return true;
 }
 

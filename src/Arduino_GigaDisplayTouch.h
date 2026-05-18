@@ -87,6 +87,7 @@ public:
    */
 #if defined(__ZEPHYR__)
   Arduino_GigaDisplayTouch();
+  Arduino_GigaDisplayTouch(TwoWire &wire);
 #elif defined(ARDUINO_GIGA)
   Arduino_GigaDisplayTouch(TwoWire &wire = Wire1,
                            uint8_t intPin = PinNameToIndex(PI_1),
@@ -133,8 +134,8 @@ public:
 private:
   GDTTouchHandler_t _gt911TouchHandler;
   GDTpoint_t _points[GT911_MAX_CONTACTS];
-#if defined(__MBED__)
   TwoWire &_wire;
+#if defined(__MBED__)
   uint8_t _intPin;
   uint8_t _rstPin;
   uint8_t _addr;
