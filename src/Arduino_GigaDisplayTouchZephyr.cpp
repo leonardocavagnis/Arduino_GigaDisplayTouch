@@ -37,6 +37,13 @@ Arduino_GigaDisplayTouch::Arduino_GigaDisplayTouch() {}
 Arduino_GigaDisplayTouch::~Arduino_GigaDisplayTouch() {}
 
 bool Arduino_GigaDisplayTouch::begin() {
+  static const struct device *const dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_touch));
+  if (!dev) {
+    printk("<ERR> touch DEV null\n");
+    return false;
+  }
+  (void)zephyr::arduino::init_dev_apply_pinctrl(dev);
+
   _gt911TouchHandler = nullptr;
   // Initialize to 1 to prevent deadlock by ensuring that
   // at least one function can always proceed initially.
